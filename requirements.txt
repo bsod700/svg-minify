@@ -1,0 +1,4 @@
+# SVG Minification Dependencies
+# Optional but recommended for best results
+scour>=0.38.2
+
