@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-Professional SVG Minification Script
+Professional SVG Minification Script - Batch Processing
 Uses scour - Industry-standard Python SVG optimizer
 
 Best practices applied:
+- Batch process all SVGs in a folder
 - Removes comments and metadata
 - Optimizes paths and transforms
 - Removes unnecessary whitespace
@@ -16,10 +17,11 @@ import sys
 import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from glob import glob
 
-# Configuration
-INPUT_FILE = 'hero.svg'
-OUTPUT_FILE = 'hero.min.svg'
+# Configuration - Folder-based batch processing
+INPUT_FOLDER = 'svg'           # Folder containing SVG files to minify
+OUTPUT_FOLDER = 'svg minified' # Folder where minified SVGs will be saved
 
 
 def format_bytes(bytes_size, decimals=2):
@@ -135,99 +137,168 @@ def minify_svg_manual(svg_content):
     return svg_content
 
 
-def minify_svg_with_scour():
-    """Minify SVG using scour library (if available)"""
+def is_scour_available():
+    """Check if scour library is available"""
     try:
         import scour.scour
-        
-        options = scour.scour.sanitizeOptions()
-        # Best practice settings for animated SVGs
-        options.remove_metadata = True
-        options.remove_descriptive_elements = True
-        options.strip_comments = True
-        options.strip_xml_prolog = True
-        options.enable_viewboxing = True
-        options.indent_type = None  # No indentation
-        options.newlines = False
-        options.strip_xml_space_attribute = True
-        options.remove_titles = False
-        options.remove_descriptions = False
-        options.remove_metadata = True
-        options.remove_descriptive_elements = False
-        options.preserve_editor_data = False
-        options.keep_editor_data = False
-        options.protect_ids_noninkscape = True
-        options.protect_ids_prefix = None
-        options.protect_ids_list = None
-        
-        with open(INPUT_FILE, 'r', encoding='utf-8') as f:
-            svg_content = f.read()
-        
-        # Use scour to optimize
-        optimized = scour.scour.scourString(svg_content, options)
-        return optimized
-        
+        return True
     except ImportError:
-        return None
+        return False
 
 
-def main():
-    """Main minification function"""
+def minify_single_file(input_path, output_path, use_scour=False):
+    """
+    Minify a single SVG file
+    
+    Args:
+        input_path: Path to input SVG file
+        output_path: Path to output minified SVG file
+        use_scour: Whether to use scour library
+    
+    Returns:
+        tuple: (original_size, minified_size, success)
+    """
     try:
-        print('>> Starting SVG minification...\n')
-        
-        # Check if input file exists
-        if not os.path.exists(INPUT_FILE):
-            raise FileNotFoundError(f'Input file not found: {INPUT_FILE}')
-        
         # Read the SVG file
-        print(f'[*] Reading: {INPUT_FILE}')
-        with open(INPUT_FILE, 'r', encoding='utf-8') as f:
+        with open(input_path, 'r', encoding='utf-8') as f:
             svg_content = f.read()
         
         original_size = len(svg_content.encode('utf-8'))
-        print(f'    Original size: {format_bytes(original_size)}\n')
         
         # Try to use scour first (best practice), fallback to manual
-        print('[*] Optimizing SVG...')
-        optimized_content = minify_svg_with_scour()
-        
-        if optimized_content is None:
-            print('    [i] Using manual optimization (install "scour" for better results)')
-            optimized_content = minify_svg_manual(svg_content)
+        if use_scour:
+            try:
+                import scour.scour
+                options = scour.scour.sanitizeOptions()
+                # Best practice settings for animated SVGs
+                options.remove_metadata = True
+                options.remove_descriptive_elements = True
+                options.strip_comments = True
+                options.strip_xml_prolog = True
+                options.enable_viewboxing = True
+                options.indent_type = None
+                options.newlines = False
+                options.strip_xml_space_attribute = True
+                options.protect_ids_noninkscape = True
+                
+                optimized_content = scour.scour.scourString(svg_content, options)
+            except Exception:
+                optimized_content = minify_svg_manual(svg_content)
         else:
-            print('    [i] Using scour optimizer (best practice)')
+            optimized_content = minify_svg_manual(svg_content)
+        
+        # Create output directory if it doesn't exist
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
         
         # Write the minified SVG
-        print(f'[*] Writing: {OUTPUT_FILE}')
-        with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
+        with open(output_path, 'w', encoding='utf-8') as f:
             f.write(optimized_content)
         
         minified_size = len(optimized_content.encode('utf-8'))
-        savings = original_size - minified_size
-        compression_ratio = calculate_compression_ratio(original_size, minified_size)
         
-        # Display results
-        print('\n[SUCCESS] Minification complete!\n')
-        print('Results:')
-        print('=' * 43)
-        print(f'   Original size:  {format_bytes(original_size)}')
-        print(f'   Minified size:  {format_bytes(minified_size)}')
-        print(f'   Saved:          {format_bytes(savings)} ({compression_ratio}%)')
-        print('=' * 43)
+        return original_size, minified_size, True
         
-        print('\n>> Done! Your minified SVG is ready to use.\n')
+    except Exception as e:
+        print(f'    [ERROR] Failed to process: {e}')
+        return 0, 0, False
+
+
+def main():
+    """Main minification function with batch processing"""
+    try:
+        print('=' * 60)
+        print('  SVG Batch Minification Tool')
+        print('=' * 60)
+        print()
         
-        # Suggest installing scour if not available
-        if minify_svg_with_scour() is None:
-            print('[TIP] Install scour for even better optimization:')
-            print('      pip install scour\n')
+        # Check if input folder exists
+        if not os.path.exists(INPUT_FOLDER):
+            print(f'[ERROR] Input folder not found: {INPUT_FOLDER}')
+            print(f'[INFO] Creating folder: {INPUT_FOLDER}')
+            os.makedirs(INPUT_FOLDER, exist_ok=True)
+            print(f'[INFO] Please place your SVG files in the "{INPUT_FOLDER}" folder and run again.')
+            sys.exit(0)
         
-    except FileNotFoundError as e:
-        print(f'[ERROR] {e}')
-        sys.exit(1)
+        # Find all SVG files in input folder
+        svg_files = glob(os.path.join(INPUT_FOLDER, '*.svg'))
+        
+        if not svg_files:
+            print(f'[ERROR] No SVG files found in "{INPUT_FOLDER}" folder')
+            print(f'[INFO] Please place your SVG files in the "{INPUT_FOLDER}" folder and run again.')
+            sys.exit(0)
+        
+        # Create output folder if it doesn't exist
+        os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+        
+        # Check if scour is available
+        use_scour = is_scour_available()
+        if use_scour:
+            print('[*] Using scour optimizer (best practice)')
+        else:
+            print('[*] Using manual optimization')
+            print('[TIP] Install "scour" for better results: pip install scour')
+        print()
+        
+        print(f'[*] Found {len(svg_files)} SVG file(s) to process')
+        print(f'[*] Input folder:  {INPUT_FOLDER}')
+        print(f'[*] Output folder: {OUTPUT_FOLDER}')
+        print()
+        
+        # Process each SVG file
+        total_original = 0
+        total_minified = 0
+        success_count = 0
+        failed_count = 0
+        
+        for i, input_path in enumerate(svg_files, 1):
+            filename = os.path.basename(input_path)
+            output_path = os.path.join(OUTPUT_FOLDER, filename)
+            
+            print(f'[{i}/{len(svg_files)}] Processing: {filename}')
+            
+            original_size, minified_size, success = minify_single_file(
+                input_path, output_path, use_scour
+            )
+            
+            if success:
+                savings = original_size - minified_size
+                ratio = calculate_compression_ratio(original_size, minified_size)
+                print(f'    Original: {format_bytes(original_size)} -> '
+                      f'Minified: {format_bytes(minified_size)} '
+                      f'(saved {format_bytes(savings)}, {ratio}%)')
+                total_original += original_size
+                total_minified += minified_size
+                success_count += 1
+            else:
+                failed_count += 1
+            
+            print()
+        
+        # Display summary
+        print('=' * 60)
+        print('  SUMMARY')
+        print('=' * 60)
+        print(f'  Files processed:    {success_count} successful, {failed_count} failed')
+        print(f'  Total original:     {format_bytes(total_original)}')
+        print(f'  Total minified:     {format_bytes(total_minified)}')
+        
+        if total_original > 0:
+            total_savings = total_original - total_minified
+            total_ratio = calculate_compression_ratio(total_original, total_minified)
+            print(f'  Total saved:        {format_bytes(total_savings)} ({total_ratio}%)')
+        
+        print('=' * 60)
+        print()
+        print(f'[SUCCESS] All files processed! Minified SVGs saved in "{OUTPUT_FOLDER}" folder')
+        print()
+        
+    except KeyboardInterrupt:
+        print('\n[INFO] Process interrupted by user')
+        sys.exit(0)
     except Exception as e:
         print(f'[ERROR] Error during minification: {e}')
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
 

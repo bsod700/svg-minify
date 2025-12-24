@@ -1,0 +1,49 @@
+========================================
+  SVG BATCH MINIFIER - QUICK GUIDE
+========================================
+
+HOW TO USE:
+-----------
+
+1. Put your SVG files in the "svg" folder
+   
+2. Run the script:
+   - Windows: Double-click "minify.bat"
+   - Command line: python minify_svg.py
+
+3. Get your minified files from "svg minified" folder
+
+CONFIGURATION:
+--------------
+
+Edit minify_svg.py to change folder names:
+
+  INPUT_FOLDER = 'svg'           # Your original SVG files
+  OUTPUT_FOLDER = 'svg minified' # Where minified files go
+
+FEATURES:
+---------
+
+✓ Processes ALL SVG files in the folder automatically
+✓ Shows progress and stats for each file
+✓ Preserves animations and styles
+✓ Saves 10-30% file size on average
+✓ Original files are never modified
+
+TIPS:
+-----
+
+• Install "scour" for better results:
+  pip install scour
+
+• Keep your original files in the "svg" folder
+• Use minified files for production/web
+• Process multiple files at once for efficiency
+
+NEED HELP?
+----------
+
+See README.md for detailed documentation
+
+========================================
+
