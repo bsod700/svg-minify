@@ -23,6 +23,9 @@ from glob import glob
 INPUT_FOLDER = 'svg'           # Folder containing SVG files to minify
 OUTPUT_FOLDER = 'svg minified' # Folder where minified SVGs will be saved
 
+# Advanced options
+MAKE_UNREADABLE = True  # Compress to single line and encode text for maximum obfuscation
+
 
 def format_bytes(bytes_size, decimals=2):
     """Format bytes to human-readable size"""
@@ -45,8 +48,8 @@ def calculate_compression_ratio(original, compressed):
 
 def minify_css(css_content):
     """Minify CSS content in style tags"""
-    # Remove comments
-    css_content = re.sub(r'/\*.*?\*/', '', css_content, flags=re.DOTALL)
+    # Remove comments (fixed regex to handle all cases)
+    css_content = re.sub(r'/\*[^*]*\*+(?:[^/*][^*]*\*+)*/', '', css_content)
     # Remove unnecessary whitespace
     css_content = re.sub(r'\s+', ' ', css_content)
     # Remove spaces around special characters
@@ -82,6 +85,138 @@ def optimize_path_data(path_d):
             optimized = optimize_number(num)
             path_d = path_d.replace(num, optimized, 1)
     return path_d.strip()
+
+
+def generate_short_name(index):
+    """Generate short names: a, b, c, ..., z, aa, ab, ..., zz, aaa, etc."""
+    name = ''
+    index += 1
+    while index > 0:
+        index -= 1
+        name = chr(97 + (index % 26)) + name
+        index //= 26
+    return name
+
+
+def extract_ids_and_classes(svg_content):
+    """Extract all IDs and class names from SVG content"""
+    ids = set()
+    classes = set()
+    
+    # Extract IDs from id="..." attributes
+    id_matches = re.findall(r'\bid=["\']([^"\']+)["\']', svg_content)
+    ids.update(id_matches)
+    
+    # Extract classes from class="..." attributes
+    class_matches = re.findall(r'\bclass=["\']([^"\']+)["\']', svg_content)
+    for class_group in class_matches:
+        # Split multiple classes
+        classes.update(class_group.split())
+    
+    return sorted(ids), sorted(classes)
+
+
+def create_name_mappings(ids, classes):
+    """Create mappings from original names to minified names"""
+    id_map = {}
+    class_map = {}
+    
+    counter = 0
+    for original_id in ids:
+        id_map[original_id] = generate_short_name(counter)
+        counter += 1
+    
+    counter = 0
+    for original_class in classes:
+        class_map[original_class] = generate_short_name(counter)
+        counter += 1
+    
+    return id_map, class_map
+
+
+def make_unreadable(svg_content):
+    """Make SVG unreadable by compressing to single line only"""
+    
+    # Remove ALL line breaks and compress to single line
+    svg_content = svg_content.replace('\n', ' ').replace('\r', '')
+    
+    # Remove spaces between closing and opening tags
+    svg_content = re.sub(r'>\s+<', '><', svg_content)
+    
+    # Minimize multiple spaces to single space
+    svg_content = re.sub(r'\s{2,}', ' ', svg_content)
+    
+    # Remove spaces before closing tags and self-closing tags
+    svg_content = re.sub(r'\s+>', '>', svg_content)
+    svg_content = re.sub(r'\s+/>', '/>', svg_content)
+    
+    return svg_content.strip()
+
+
+def minify_ids_and_classes(svg_content):
+    """Minify all ID and class names to short names and update all references"""
+    # Extract all IDs and classes
+    ids, classes = extract_ids_and_classes(svg_content)
+    
+    if not ids and not classes:
+        return svg_content
+    
+    # Create mappings
+    id_map, class_map = create_name_mappings(ids, classes)
+    
+    # Create a combined pattern for efficient replacement
+    # Sort by length (longest first) to avoid partial replacements
+    all_replacements = []
+    
+    # Build regex pattern for all ID replacements
+    if id_map:
+        sorted_ids = sorted(id_map.keys(), key=len, reverse=True)
+        escaped_ids = [re.escape(id_name) for id_name in sorted_ids]
+        id_pattern = '|'.join(escaped_ids)
+        
+        # Replace IDs in different contexts
+        # 1. id="..." attributes
+        svg_content = re.sub(
+            rf'\bid=(["\'])({id_pattern})\1',
+            lambda m: f'id={m.group(1)}{id_map[m.group(2)]}{m.group(1)}',
+            svg_content
+        )
+        
+        # 2. CSS selectors and url() references: #id
+        svg_content = re.sub(
+            rf'#({id_pattern})\b',
+            lambda m: f'#{id_map[m.group(1)]}',
+            svg_content
+        )
+    
+    # Build regex pattern for all class replacements
+    if class_map:
+        sorted_classes = sorted(class_map.keys(), key=len, reverse=True)
+        escaped_classes = [re.escape(cls) for cls in sorted_classes]
+        class_pattern = '|'.join(escaped_classes)
+        
+        # 1. class="..." attributes - handle multiple classes
+        def replace_classes(match):
+            quote = match.group(1)
+            classes_str = match.group(2)
+            class_list = classes_str.split()
+            new_classes = [class_map.get(c, c) for c in class_list]
+            return f'class={quote}{" ".join(new_classes)}{quote}'
+        
+        svg_content = re.sub(
+            rf'\bclass=(["\'])([^"\']+)\1',
+            replace_classes,
+            svg_content
+        )
+        
+        # 2. CSS selectors: .class
+        svg_content = re.sub(
+            rf'\.({class_pattern})\b',
+            lambda m: f'.{class_map[m.group(1)]}',
+            svg_content
+        )
+    
+    return svg_content
 
 
 def minify_svg_manual(svg_content):
@@ -182,10 +317,30 @@ def minify_single_file(input_path, output_path, use_scour=False):
                 options.protect_ids_noninkscape = True
                 
                 optimized_content = scour.scour.scourString(svg_content, options)
+                
+                # Scour doesn't remove CSS comments, so we do it manually
+                def minify_style_tag(match):
+                    style_content = match.group(1)
+                    minified = minify_css(style_content)
+                    return f'<style>{minified}</style>'
+                
+                optimized_content = re.sub(
+                    r'<style[^>]*>(.*?)</style>',
+                    minify_style_tag,
+                    optimized_content,
+                    flags=re.DOTALL
+                )
             except Exception:
                 optimized_content = minify_svg_manual(svg_content)
         else:
             optimized_content = minify_svg_manual(svg_content)
+        
+        # Minify IDs and classes to very short names
+        optimized_content = minify_ids_and_classes(optimized_content)
+        
+        # Make unreadable if enabled (compress to single line and encode text)
+        if MAKE_UNREADABLE:
+            optimized_content = make_unreadable(optimized_content)
         
         # Create output directory if it doesn't exist
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -237,6 +392,10 @@ def main():
         else:
             print('[*] Using manual optimization')
             print('[TIP] Install "scour" for better results: pip install scour')
+        
+        if MAKE_UNREADABLE:
+            print('[*] Unreadable mode: ON (single-line compression)')
+        
         print()
         
         print(f'[*] Found {len(svg_files)} SVG file(s) to process')
