@@ -25,6 +25,8 @@ OUTPUT_FOLDER = 'svg minified' # Folder where minified SVGs will be saved
 
 # Advanced options
 MAKE_UNREADABLE = True  # Compress to single line and encode text for maximum obfuscation
+REMOVE_METADATA = False  # Remove <metadata> tags (set to True to remove, False to preserve)
+REMOVE_DESCRIPTIVE_ELEMENTS = False  # Remove <title> and <desc> tags (set to True to remove, False to preserve)
 
 
 def format_bytes(bytes_size, decimals=2):
@@ -240,8 +242,14 @@ def minify_svg_manual(svg_content):
         flags=re.DOTALL
     )
     
-    # Remove metadata tags
-    svg_content = re.sub(r'<metadata[^>]*>.*?</metadata>', '', svg_content, flags=re.DOTALL)
+    # Conditionally remove metadata tags based on configuration
+    if REMOVE_METADATA:
+        svg_content = re.sub(r'<metadata[^>]*>.*?</metadata>', '', svg_content, flags=re.DOTALL)
+    
+    # Conditionally remove descriptive elements (title and desc) based on configuration
+    if REMOVE_DESCRIPTIVE_ELEMENTS:
+        svg_content = re.sub(r'<title[^>]*>.*?</title>', '', svg_content, flags=re.DOTALL)
+        svg_content = re.sub(r'<desc[^>]*>.*?</desc>', '', svg_content, flags=re.DOTALL)
     
     # Remove unnecessary whitespace between tags
     svg_content = re.sub(r'>\s+<', '><', svg_content)
@@ -306,8 +314,8 @@ def minify_single_file(input_path, output_path, use_scour=False):
                 import scour.scour
                 options = scour.scour.sanitizeOptions()
                 # Best practice settings for animated SVGs
-                options.remove_metadata = True
-                options.remove_descriptive_elements = True
+                options.remove_metadata = REMOVE_METADATA  # Configurable: remove or preserve metadata tags
+                options.remove_descriptive_elements = REMOVE_DESCRIPTIVE_ELEMENTS  # Configurable: remove or preserve title and desc tags
                 options.strip_comments = True
                 options.strip_xml_prolog = True
                 options.enable_viewboxing = True
